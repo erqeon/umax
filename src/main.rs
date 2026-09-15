@@ -19,6 +19,7 @@ struct Editor {
     ctrl_x_pressed: bool,
     saved_buffer: Vec<Vec<char>>,
     row_offset: usize,
+	col_offset: usize,
     redraw_all: bool,
     redraw_current_line: bool,
 }
@@ -37,14 +38,21 @@ impl Editor {
 
             for i in 0..max_rows {
                 if i < visible_rows.len() {
-                    let line: String = visible_rows[i].iter().collect();
-                    
+                    let (width, _height) = size().unwrap();
+                    let row = &visible_rows[i];
+
+                    let line: String = if self.col_offset < row.len() {
+                        let end_col = std::cmp::min(row.len(), self.col_offset + width as usize);
+                        row[self.col_offset..end_col].iter().collect()
+                    } else {
+                        String::new()
+                    };
+
                     execute!(stdout, MoveTo(0, i as u16))?;
                     execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
                     print!("{}", line);
                 } else {
                     let line = String::new();
-                    
                     execute!(stdout, MoveTo(0, i as u16))?;
                     execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
                     print!("{}", line);
@@ -55,13 +63,22 @@ impl Editor {
         }
 
         if self.redraw_current_line {
+            let (width, _height) = size().unwrap();
+            
             let screen_y = self.cursor_y - self.row_offset;
-            let line: String = self.buffer[self.cursor_y].iter().collect();
+            let row = &self.buffer[self.cursor_y];
+
+            let line: String = if self.col_offset < row.len() {
+                let end_col = std::cmp::min(row.len(), self.col_offset + width as usize);
+                row[self.col_offset..end_col].iter().collect()
+            } else {
+                String::new()
+            };
 
             execute!(stdout, MoveTo(0, screen_y as u16))?;
             execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
-
             print!("{}", line);
+
             self.redraw_current_line = false;
         }
 
@@ -188,6 +205,11 @@ impl Editor {
                     self.row_offset = self.cursor_y;
                     self.redraw_all = true;
                 }
+                 
+                if self.cursor_x < self.col_offset {
+                    self.col_offset = self.cursor_x;
+                    self.redraw_all = true;
+                }
             }
         }
 
@@ -207,8 +229,14 @@ impl Editor {
                 if height > 1 {
                     visible_height = height as usize - 1;
                 }
+
                 if self.cursor_y >= self.row_offset + visible_height {
                     self.row_offset = self.cursor_y - visible_height + 1;
+                    self.redraw_all = true;
+                }
+
+                if self.cursor_x < self.col_offset {
+                    self.col_offset = self.cursor_x;
                     self.redraw_all = true;
                 }
             }
@@ -217,13 +245,24 @@ impl Editor {
         if key_event.code == KeyCode::Left {
             if self.cursor_x > 0 {
                 self.cursor_x -= 1;
+                if self.cursor_x < self.col_offset {
+                    self.col_offset = self.cursor_x;
+                    self.redraw_all = true;
+                }
             }
         }
 
         if key_event.code == KeyCode::Right {
             let line = self.buffer[self.cursor_y].len();
+
             if self.cursor_x < line {
                 self.cursor_x += 1;
+
+                let (width, _) = size().unwrap();
+                if self.cursor_x >= self.col_offset + width as usize {
+                    self.col_offset = self.cursor_x - width as usize + 1;
+                    self.redraw_all = true;
+                }
             }
         }
 
@@ -277,6 +316,7 @@ fn main() -> io::Result<()> {
         ctrl_x_pressed: false,
         saved_buffer: file_buffer,
         row_offset: 0,
+		col_offset: 0,
         redraw_all: true,
         redraw_current_line: false,
     };
