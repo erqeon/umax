@@ -19,9 +19,9 @@ struct Editor {
     ctrl_x_pressed: bool,
     saved_buffer: Vec<Vec<char>>,
     row_offset: usize,
-	col_offset: usize,
     redraw_all: bool,
     redraw_current_line: bool,
+    col_offset: usize,
 }
 
 impl Editor {
@@ -316,9 +316,9 @@ fn main() -> io::Result<()> {
         ctrl_x_pressed: false,
         saved_buffer: file_buffer,
         row_offset: 0,
-		col_offset: 0,
         redraw_all: true,
         redraw_current_line: false,
+        col_offset: 0,
     };
 
     loop {
