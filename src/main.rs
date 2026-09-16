@@ -29,18 +29,29 @@ impl Editor {
         execute!(stdout, Hide)?;
         execute!(stdout, MoveTo(0, 0))?;
 
-        let (_, height) = size().unwrap();
-        let end_row = std::cmp::min(self.buffer.len(), self.row_offset + (height as usize - 1));
+        let (width, height) = size().unwrap();
+        let visible_height = (height as usize) - 1;
+
+        if self.cursor_y >= self.row_offset + visible_height {
+            self.row_offset = self.cursor_y - visible_height + 1;
+            self.redraw_all = true;
+        }
+
+        if self.cursor_y < self.row_offset {
+            self.row_offset = self.cursor_y;
+            self.redraw_all = true;
+        }
+
+        let end_row = std::cmp::min(self.buffer.len(), self.row_offset + visible_height);
         let visible_rows = &self.buffer[self.row_offset .. end_row];
 
         if self.redraw_all {
-            let max_rows = height as usize - 1;
+            for i in 0..visible_height {
+                execute!(stdout, MoveTo(0, i as u16))?;
+                execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
 
-            for i in 0..max_rows {
                 if i < visible_rows.len() {
-                    let (width, _height) = size().unwrap();
                     let row = &visible_rows[i];
-
                     let line: String = if self.col_offset < row.len() {
                         let end_col = std::cmp::min(row.len(), self.col_offset + width as usize);
                         row[self.col_offset..end_col].iter().collect()
@@ -48,57 +59,63 @@ impl Editor {
                         String::new()
                     };
 
-                    execute!(stdout, MoveTo(0, i as u16))?;
-                    execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
                     print!("{}", line);
                 } else {
-                    let line = String::new();
-                    execute!(stdout, MoveTo(0, i as u16))?;
-                    execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
-                    print!("{}", line);
+                    print!("");
                 }
             }
-
             self.redraw_all = false;
         }
 
         if self.redraw_current_line {
-            let (width, _height) = size().unwrap();
-            
             let screen_y = self.cursor_y - self.row_offset;
-            let row = &self.buffer[self.cursor_y];
+            
+            if screen_y < visible_height && self.cursor_y < self.buffer.len() {
+                let row = &self.buffer[self.cursor_y];
+                let line: String = if self.col_offset < row.len() {
+                    let end_col = std::cmp::min(row.len(), self.col_offset + width as usize);
+                    row[self.col_offset..end_col].iter().collect()
+                } else {
+                    String::new()
+                };
 
-            let line: String = if self.col_offset < row.len() {
-                let end_col = std::cmp::min(row.len(), self.col_offset + width as usize);
-                row[self.col_offset..end_col].iter().collect()
-            } else {
-                String::new()
-            };
-
-            execute!(stdout, MoveTo(0, screen_y as u16))?;
-            execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
-            print!("{}", line);
+                execute!(stdout, MoveTo(0, screen_y as u16))?;
+                execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
+                print!("{}", line);
+            }
 
             self.redraw_current_line = false;
         }
 
-        let (_, height) = size().unwrap();
+        execute!(stdout, MoveTo(0, visible_height as u16))?;
+
+        execute!(
+            stdout,
+            crossterm::style::SetBackgroundColor(crossterm::style::Color::AnsiValue(252)),
+            crossterm::style::SetForegroundColor(crossterm::style::Color::Black), 
+        )?;
+
+        execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
         
-        execute!(stdout, MoveTo(0, height - 1))?;
         print!(
-            "[{}{}]: L{}, C{}. {}", 
+            "{}{} L{}, C{}. {}", 
             self.filename, 
             if self.buffer == self.saved_buffer { "" } else { "*" }, 
             self.cursor_y + 1, self.cursor_x + 1, 
             if self.ctrl_x_pressed { "C-x" } else { "" },
         );
+
+        execute!(
+            stdout,
+            crossterm::style::ResetColor,
+        )?;
         
-        execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine))?;
-        execute!(stdout, MoveTo(self.cursor_x as u16, (self.cursor_y - self.row_offset) as u16))?;
+        let screen_x = self.cursor_x - self.col_offset;
+        let screen_y = self.cursor_y - self.row_offset;
+        execute!(stdout, MoveTo(screen_x as u16, screen_y as u16))?;
         
         execute!(stdout, Show)?;
         stdout.flush()?;
-        
         Ok(())
     }
 
@@ -132,7 +149,7 @@ impl Editor {
                 return true;
             } else {
                 self.ctrl_x_pressed = false;
-                self.redraw_all = true; 
+                self.redraw_all = true;
             }
 
             return false;
@@ -140,9 +157,23 @@ impl Editor {
 
         if key_event.code == KeyCode::Backspace {
             if self.cursor_x > 0 {
+                if self.cursor_x >= 4 {
+                    let row = &self.buffer[self.cursor_y];
+                    let left_chars = &row[self.cursor_x - 4 .. self.cursor_x];
+
+                    if left_chars.iter().all(|&c| c == ' ') {
+                        self.cursor_x -= 4;
+                        for _ in 0..4 {
+                            self.buffer[self.cursor_y].remove(self.cursor_x);
+                        }
+
+                        self.redraw_current_line = true;
+                        return false;
+                    }
+                }
+
                 self.cursor_x -= 1;
                 self.buffer[self.cursor_y].remove(self.cursor_x);
-                
                 self.redraw_current_line = true;
             } else {
                 if self.cursor_y > 0 {
@@ -259,6 +290,7 @@ impl Editor {
                 self.cursor_x += 1;
 
                 let (width, _) = size().unwrap();
+
                 if self.cursor_x >= self.col_offset + width as usize {
                     self.col_offset = self.cursor_x - width as usize + 1;
                     self.redraw_all = true;
