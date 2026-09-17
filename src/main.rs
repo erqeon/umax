@@ -1,5 +1,6 @@
 /* There are errors here right now, but there’s always time to fix everything, isn’t there? */
 
+/* oh well, it's just importing libraries */
 use std::{io::{self, Write}};
 
 use crossterm::{
@@ -11,6 +12,7 @@ use crossterm::{
     },
 };
 
+/* We don't know what this is, if we knew... */
 struct Editor {
     buffer: Vec<Vec<char>>,
     cursor_x: usize,
@@ -25,6 +27,7 @@ struct Editor {
 }
 
 impl Editor {
+    /* This function is responsible for rendering on the screen. */
     pub fn render(&mut self, stdout: &mut io::Stdout) -> io::Result<()> {
         execute!(stdout, Hide)?;
         execute!(stdout, MoveTo(0, 0))?;
@@ -87,6 +90,8 @@ impl Editor {
             self.redraw_current_line = false;
         }
 
+        std::io::Write::flush(&mut std::io::stdout())?;
+
         execute!(stdout, MoveTo(0, visible_height as u16))?;
 
         execute!(
@@ -119,6 +124,7 @@ impl Editor {
         Ok(())
     }
 
+    /* This function handles control/input. */
     pub fn handle_key(&mut self, key_event: crossterm::event::KeyEvent) -> bool {
         if key_event.kind != crossterm::event::KeyEventKind::Press {
             return false;
@@ -308,6 +314,10 @@ impl Editor {
     }
 }
 
+/* 
+    Well, that’s the main function.
+    (incidentally, this is exactly where people start learning Rust and write "Hello, world!").
+*/
 fn main() -> io::Result<()> {
     let mut stdout = io::stdout();
     let args: Vec<String> = std::env::args().collect();
